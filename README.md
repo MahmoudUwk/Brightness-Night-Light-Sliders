@@ -27,6 +27,8 @@ The installer:
 - only applies extra permission fixes when the system reports a real permission problem
 - installs and enables the extension
 
+If the installer adds your user to the `i2c` group, reboot before testing brightness control.
+
 ## Behavior
 
 - The brightness slider stays visible even if no DDC display is currently detected
@@ -47,6 +49,10 @@ If `ddcutil detect` shows no displays, your monitor path, dock, adapter, or disp
 **Night Light slider not showing**
 
 Enable Night Light in `Settings > Displays > Night Light`.
+
+**Night Light slider changes schedule behavior**
+
+Moving the slider disables automatic sunrise/sunset scheduling and switches Night Light to a manual all-day schedule so your selected warmth is preserved.
 
 **Inspect Night Light temperature changes**
 
