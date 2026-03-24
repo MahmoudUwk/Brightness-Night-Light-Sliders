@@ -1,6 +1,8 @@
 # Brightness & Night Light Sliders
 
-![Demo](demo.png)
+<p align="center">
+  <img src="demo.png" alt="Demo" width="450">
+</p>
 
 GNOME Shell extension that adds sliders to Quick Settings for external monitor brightness (DDC/CI) and Night Light temperature.
 
