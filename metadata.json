@@ -1,0 +1,10 @@
+{
+  "uuid": "brightness-night-light-sliders@MahmoudUwk.github.com",
+  "name": "Brightness and Night Light Sliders",
+  "description": "Adds sliders to the Quick Settings panel to control monitor brightness and Night Light temperature.",
+  "version": 3,
+  "shell-version": ["45", "46", "47"],
+  "gettext-domain": "gnome-shell-extensions-night-light-slider",
+  "url": "https://github.com/MahmoudUwk/brightness-night-light-sliders",
+  "settings-schema": ""
+}

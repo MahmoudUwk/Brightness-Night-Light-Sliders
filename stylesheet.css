@@ -1,0 +1,5 @@
+.bnl-slider slider {
+    /* Ensure sliders take full available width in Quick Settings */
+    min-width: 250px;
+    width: 100%;
+}
