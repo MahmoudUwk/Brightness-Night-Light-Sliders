@@ -87,6 +87,7 @@ const NightLightItem = GObject.registerClass(
       this.add_style_class_name("bnl-slider");
 
       this._connections = [];
+      this._syncing = false;
 
       this._settings = new Gio.Settings({ schema_id: COLOR_SCHEMA });
 
@@ -119,12 +120,22 @@ const NightLightItem = GObject.registerClass(
     }
 
     _sliderChanged() {
+      if (this._syncing) return;
+
       const value = this.slider.value;
       const temperature = TemperatureUtils.denormalize(value);
+      
+      this._syncing = true;
       this._settings.set_uint(TEMPERATURE_KEY, temperature);
+      GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+        this._syncing = false;
+        return GLib.SOURCE_REMOVE;
+      });
     }
 
     _sync() {
+      if (this._syncing) return;
+      
       const temperature = this._settings.get_uint(TEMPERATURE_KEY);
       const value = TemperatureUtils.normalize(temperature);
       this.slider.value = value;
