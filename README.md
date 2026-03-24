@@ -9,7 +9,8 @@ GNOME Shell extension that adds sliders to Quick Settings for external monitor b
 ## Requirements
 
 - GNOME 45, 46, or 47
-- External monitor with DDC/CI support
+- External monitor with DDC/CI support (for brightness slider)
+- Night Light enabled in **Settings > Displays > Night Light** (for night light slider)
 
 ## Install
 
@@ -33,7 +34,7 @@ git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git /tmp/
 
 **Night Light slider not appearing?**
 
-Enable Night Light in GNOME Settings first.
+Enable Night Light first: **Settings > Displays > Night Light** > Turn it ON. The slider only shows when Night Light is enabled.
 
 **Screen freezes?** Increase delay in `extension.js`:
 
