@@ -12,21 +12,10 @@ GNOME Shell extension that adds sliders to Quick Settings for external monitor b
 
 ## Install
 
-```bash
-./install.sh
-```
-
-Or manually:
+One-liner:
 
 ```bash
-mkdir -p ~/.local/share/gnome-shell/extensions/brightness-night-light-sliders@MahmoudUwk.github.com
-cp extension.js ddcutil.js metadata.json stylesheet.css ~/.local/share/gnome-shell/extensions/brightness-night-light-sliders@MahmoudUwk.github.com/
-```
-
-Restart GNOME Shell, then enable:
-
-```bash
-gnome-extensions enable brightness-night-light-sliders@MahmoudUwk.github.com
+git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git /tmp/bnls && cd /tmp/bnls && ./install.sh
 ```
 
 ## DDC/CI Setup
