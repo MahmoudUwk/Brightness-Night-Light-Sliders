@@ -22,6 +22,8 @@ git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git /tmp/
 
 **Brightness slider not appearing?**
 
+The brightness slider stays visible, but control only works when `ddcutil` can see a DDC/CI display.
+
 1. Install ddcutil: `sudo apt install ddcutil`
 2. Verify monitor detection: `ddcutil detect`
 3. If permission denied, run:
@@ -35,6 +37,12 @@ git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git /tmp/
 **Night Light slider not appearing?**
 
 Enable Night Light first: **Settings > Displays > Night Light** > Turn it ON. The slider only shows when Night Light is enabled.
+
+To inspect Night Light changes from the terminal, use:
+
+```bash
+gsettings monitor org.gnome.settings-daemon.plugins.color night-light-temperature
+```
 
 **Screen freezes?** Increase delay in `extension.js`:
 

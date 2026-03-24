@@ -25,6 +25,8 @@ const BrightnessSlider = GObject.registerClass(
       });
 
       this.add_style_class_name("bnl-slider");
+      this.visible = true;
+      this.slider.accessible_name = _("Brightness");
 
       this.slider.connect("notify::value", () => {
         const level = Math.round(this.slider.value * 100);
@@ -45,7 +47,7 @@ const BrightnessSlider = GObject.registerClass(
         })
         .catch((e) => {
           extLog(`Could not sync brightness: ${e.message}`);
-          this.visible = false;
+          this.visible = true;
         });
     }
 
