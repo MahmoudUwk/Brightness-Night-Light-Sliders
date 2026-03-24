@@ -27,11 +27,10 @@ const BrightnessSlider = GObject.registerClass(
       this.add_style_class_name("bnl-slider");
       this.visible = true;
       this.slider.accessible_name = _("Brightness");
-
-      this.slider.connect("notify::value", () => {
-        const level = Math.round(this.slider.value * 100);
-        DDCUtil.setBrightness(level);
-      });
+      this._sliderChangedId = this.slider.connect(
+        "notify::value",
+        this._sliderChanged.bind(this),
+      );
 
       GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
         this._syncBrightness();
@@ -39,10 +38,17 @@ const BrightnessSlider = GObject.registerClass(
       });
     }
 
+    _sliderChanged() {
+      const level = Math.round(this.slider.value * 100);
+      DDCUtil.setBrightness(level);
+    }
+
     _syncBrightness() {
       DDCUtil.getBrightness()
         .then((level) => {
+          this.slider.block_signal_handler(this._sliderChangedId);
           this.slider.value = level / 100;
+          this.slider.unblock_signal_handler(this._sliderChangedId);
           this.visible = true;
         })
         .catch((e) => {
@@ -61,6 +67,9 @@ const ICON_NAME = "night-light-symbolic";
 const COLOR_SCHEMA = "org.gnome.settings-daemon.plugins.color";
 const TEMPERATURE_KEY = "night-light-temperature";
 const ENABLE_KEY = "night-light-enabled";
+const SCHEDULE_AUTOMATIC_KEY = "night-light-schedule-automatic";
+const SCHEDULE_FROM_KEY = "night-light-schedule-from";
+const SCHEDULE_TO_KEY = "night-light-schedule-to";
 
 class TemperatureUtils {
   // Temperature limits - experimentally determined values
@@ -89,7 +98,6 @@ const NightLightItem = GObject.registerClass(
       this.add_style_class_name("bnl-slider");
 
       this._connections = [];
-      this._syncing = false;
 
       this._settings = new Gio.Settings({ schema_id: COLOR_SCHEMA });
 
@@ -107,9 +115,11 @@ const NightLightItem = GObject.registerClass(
         ),
       );
 
-      this._connections.push(
-        this.slider.connect("notify::value", this._sliderChanged.bind(this)),
+      this._sliderChangedId = this.slider.connect(
+        "notify::value",
+        this._sliderChanged.bind(this),
       );
+      this._connections.push(this._sliderChangedId);
 
       this.slider.accessible_name = _("Night Light");
 
@@ -122,25 +132,24 @@ const NightLightItem = GObject.registerClass(
     }
 
     _sliderChanged() {
-      if (this._syncing) return;
-
       const value = this.slider.value;
       const temperature = TemperatureUtils.denormalize(value);
-      
-      this._syncing = true;
+
+      if (this._settings.get_boolean(SCHEDULE_AUTOMATIC_KEY)) {
+        this._settings.set_boolean(SCHEDULE_AUTOMATIC_KEY, false);
+        this._settings.set_double(SCHEDULE_FROM_KEY, 0.0);
+        this._settings.set_double(SCHEDULE_TO_KEY, 23.99);
+      }
+
       this._settings.set_uint(TEMPERATURE_KEY, temperature);
-      GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
-        this._syncing = false;
-        return GLib.SOURCE_REMOVE;
-      });
     }
 
     _sync() {
-      if (this._syncing) return;
-      
       const temperature = this._settings.get_uint(TEMPERATURE_KEY);
       const value = TemperatureUtils.normalize(temperature);
+      this.slider.block_signal_handler(this._sliderChangedId);
       this.slider.value = value;
+      this.slider.unblock_signal_handler(this._sliderChangedId);
     }
 
     destroy() {
@@ -189,7 +198,7 @@ export default class BrightnessAndNightLightSlidersExtension extends Extension {
       queueMs: 130,
       sleepMultiplier: 1.0,
       allowZeroBrightness: false,
-      ddcutilPath: "/usr/bin/ddcutil",
+      ddcutilPath: "",
       additionalArgs: "",
     });
 

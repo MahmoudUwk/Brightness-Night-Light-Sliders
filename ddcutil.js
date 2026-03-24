@@ -1,5 +1,5 @@
-import Gio from "gi://Gio";
-import GLib from "gi://GLib";
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 
 export class DDCUtil {
   static DEFAULT_QUEUE_MS = 130;
@@ -7,39 +7,57 @@ export class DDCUtil {
   static MIN_BRIGHTNESS = 1;
 
   static _debounceTimeout = null;
+  static _commandQueue = Promise.resolve();
+  static _resolvedPath = null;
+  static _detectedDisplays = null;
   static _settings = {
     queueMs: DDCUtil.DEFAULT_QUEUE_MS,
     sleepMultiplier: DDCUtil.DEFAULT_SLEEP_MULTIPLIER,
     allowZeroBrightness: false,
-    ddcutilPath: "/usr/bin/ddcutil",
-    additionalArgs: "",
+    ddcutilPath: '',
+    additionalArgs: '',
   };
-  static _isAvailable = null;
+
+  static _enqueue(task) {
+    const run = this._commandQueue.then(task, task);
+    this._commandQueue = run.catch(() => {});
+    return run;
+  }
+
+  static _getCommandPath() {
+    if (this._resolvedPath)
+      return this._resolvedPath;
+
+    const configuredPath = this._settings.ddcutilPath?.trim();
+    if (configuredPath) {
+      const file = Gio.File.new_for_path(configuredPath);
+      if (file.query_exists(null)) {
+        this._resolvedPath = configuredPath;
+        return this._resolvedPath;
+      }
+    }
+
+    this._resolvedPath = GLib.find_program_in_path('ddcutil');
+    return this._resolvedPath;
+  }
 
   static isAvailable() {
-    if (this._isAvailable !== null) {
-      return this._isAvailable;
-    }
+    const path = this._getCommandPath();
 
-    const file = Gio.File.new_for_path(this._settings.ddcutilPath);
-    this._isAvailable = file.query_exists(null);
+    if (!path)
+      console.log('[DDCUtil] Warning: ddcutil not found in PATH');
 
-    if (!this._isAvailable) {
-      console.log(`[DDCUtil] Warning: ${this._settings.ddcutilPath} not found`);
-    }
-
-    return this._isAvailable;
+    return Boolean(path);
   }
 
   static _parseAdditionalArgs(argsString) {
-    if (!argsString || argsString.trim() === "") {
+    if (!argsString || argsString.trim() === '')
       return [];
-    }
 
     const args = [];
-    let current = "";
+    let current = '';
     let inQuotes = false;
-    let quoteChar = "";
+    let quoteChar = '';
 
     for (let i = 0; i < argsString.length; i++) {
       const char = argsString[i];
@@ -49,132 +67,145 @@ export class DDCUtil {
         quoteChar = char;
       } else if (char === quoteChar && inQuotes) {
         inQuotes = false;
-        quoteChar = "";
-      } else if (char === " " && !inQuotes) {
-        if (current.trim() !== "") {
+        quoteChar = '';
+      } else if (char === ' ' && !inQuotes) {
+        if (current.trim() !== '')
           args.push(current.trim());
-        }
-        current = "";
+        current = '';
       } else {
         current += char;
       }
     }
 
-    if (current.trim() !== "") {
+    if (current.trim() !== '')
       args.push(current.trim());
-    }
 
     return args;
   }
 
-  static _spawnWithCallback(argv, callback) {
-    try {
-      const proc = Gio.Subprocess.new(
-        argv,
-        Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
-      );
-
-      proc.communicate_utf8_async(null, null, (proc, res) => {
-        try {
-          const [, stdout, stderr] = proc.communicate_utf8_finish(res);
-          if (proc.get_successful()) {
-            callback(null, stdout);
-          } else {
-            const error = stderr || stdout || "Unknown error";
-            callback(new Error(error.trim()), null);
-          }
-        } catch (e) {
-          callback(e, null);
-        }
-      });
-    } catch (e) {
-      callback(e, null);
-    }
-  }
-
-  static async _runCommand(args) {
+  static _spawn(argv) {
     return new Promise((resolve, reject) => {
-      if (!this.isAvailable()) {
-        reject(new Error(`ddcutil not found at ${this._settings.ddcutilPath}`));
-        return;
+      try {
+        const proc = Gio.Subprocess.new(
+          argv,
+          Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
+        );
+
+        proc.communicate_utf8_async(null, null, (subprocess, res) => {
+          try {
+            const [, stdout, stderr] = subprocess.communicate_utf8_finish(res);
+            if (!subprocess.get_successful()) {
+              reject(new Error((stderr || stdout || 'Unknown error').trim()));
+              return;
+            }
+
+            resolve((stdout || '').trim());
+          } catch (error) {
+            reject(error);
+          }
+        });
+      } catch (error) {
+        reject(error);
       }
-
-      const additionalArgs = this._parseAdditionalArgs(
-        this._settings.additionalArgs,
-      );
-      const fullArgs = [this._settings.ddcutilPath, ...args, ...additionalArgs];
-
-      this._spawnWithCallback(fullArgs, (error, output) => {
-        if (error) {
-          reject(error);
-        } else if (
-          output &&
-          (output.includes("DDC communication failed") ||
-            output.includes("No monitor detected"))
-        ) {
-          reject(new Error(output.trim()));
-        } else {
-          resolve(output ? output.trim() : "");
-        }
-      });
     });
   }
 
-  static async getBrightness(display = 1) {
-    try {
-      const sleepMultiplier = (this._settings.sleepMultiplier / 40).toFixed(3);
-      const args = [
-        "getvcp",
-        "--brief",
-        "10",
-        "--display",
-        String(display),
-        "--sleep-multiplier",
-        sleepMultiplier,
-      ];
+  static async _runCommand(args, { includeAdditionalArgs = true } = {}) {
+    const commandPath = this._getCommandPath();
+    if (!commandPath)
+      throw new Error('ddcutil not found in PATH');
 
-      const output = await this._runCommand(args);
-      if (!output) {
-        throw new Error("No output from ddcutil");
+    const extraArgs = includeAdditionalArgs
+      ? this._parseAdditionalArgs(this._settings.additionalArgs)
+      : [];
+
+    return this._spawn([commandPath, ...args, ...extraArgs]);
+  }
+
+  static async detectDisplays(forceRefresh = false) {
+    if (!forceRefresh && this._detectedDisplays)
+      return this._detectedDisplays;
+
+    const detect = async args => {
+      try {
+        return await this._runCommand(args, { includeAdditionalArgs: false });
+      } catch (error) {
+        return '';
       }
+    };
+
+    const output = await this._enqueue(async () => {
+      const briefOutput = await detect(['detect', '--brief']);
+      if (briefOutput)
+        return briefOutput;
+
+      return detect(['detect']);
+    });
+
+    const matches = [...output.matchAll(/Display\s+(\d+)/g)];
+    this._detectedDisplays = matches.map(match => Number.parseInt(match[1], 10));
+    return this._detectedDisplays;
+  }
+
+  static async getDefaultDisplay(forceRefresh = false) {
+    const displays = await this.detectDisplays(forceRefresh);
+
+    if (!displays.length)
+      throw new Error('No DDC/CI display detected');
+
+    return displays[0];
+  }
+
+  static async getBrightness(display = null) {
+    const resolvedDisplay = display ?? await this.getDefaultDisplay();
+
+    try {
+      const output = await this._enqueue(() => this._runCommand([
+        'getvcp',
+        '--brief',
+        '10',
+        '--display',
+        String(resolvedDisplay),
+        '--sleep-multiplier',
+        String(this._settings.sleepMultiplier),
+      ]));
+
+      if (!output)
+        throw new Error('No output from ddcutil');
 
       const vcpMatch = output.match(/^VCP.*$/gm);
       if (vcpMatch !== null) {
-        const parts = vcpMatch.join("\n").split(/\s+/);
-        if (parts.length >= 5 && parts[2] !== "ERR") {
-          const value = parseInt(parts[3], 10);
-          if (!isNaN(value)) {
+        const parts = vcpMatch.join('\n').split(/\s+/);
+        if (parts.length >= 5 && parts[2] !== 'ERR') {
+          const value = Number.parseInt(parts[3], 10);
+          if (!Number.isNaN(value))
             return value;
-          }
         }
       }
 
       const match = /current value =\s*(\d+)/i.exec(output);
-      if (match && match[1]) {
-        const value = parseInt(match[1], 10);
-        if (!isNaN(value)) {
+      if (match?.[1]) {
+        const value = Number.parseInt(match[1], 10);
+        if (!Number.isNaN(value))
           return value;
-        }
       }
 
-      throw new Error("Could not parse brightness from ddcutil output");
-    } catch (e) {
-      console.log(`[DDCUtil] Error getting brightness: ${e.message}`);
-      throw e;
+      throw new Error('Could not parse brightness from ddcutil output');
+    } catch (error) {
+      console.log(`[DDCUtil] Error getting brightness: ${error.message}`);
+      throw error;
     }
   }
 
-  static setBrightness(value, display = 1) {
+  static setBrightness(value, display = null) {
     if (this._debounceTimeout) {
       GLib.source_remove(this._debounceTimeout);
       this._debounceTimeout = null;
     }
 
     let newBrightness = Math.round(Math.max(0, Math.min(100, value)));
-
-    if (newBrightness === 0 && !this._settings.allowZeroBrightness) {
+    if (newBrightness === 0 && !this._settings.allowZeroBrightness)
       newBrightness = this.MIN_BRIGHTNESS;
-    }
 
     this._debounceTimeout = GLib.timeout_add(
       GLib.PRIORITY_DEFAULT,
@@ -182,37 +213,27 @@ export class DDCUtil {
       () => {
         this._debounceTimeout = null;
 
-        if (!this.isAvailable()) {
-          return GLib.SOURCE_REMOVE;
-        }
+        void this._enqueue(async () => {
+          try {
+            const resolvedDisplay = display ?? await this.getDefaultDisplay();
+            await this._runCommand([
+              'setvcp',
+              '10',
+              String(newBrightness),
+              '--display',
+              String(resolvedDisplay),
+              '--sleep-multiplier',
+              String(this._settings.sleepMultiplier),
+            ]);
 
-        const sleepMultiplier = (this._settings.sleepMultiplier / 40).toFixed(
-          3,
-        );
-        const additionalArgs = this._parseAdditionalArgs(
-          this._settings.additionalArgs,
-        );
-
-        const args = [
-          "setvcp",
-          "10",
-          String(newBrightness),
-          "--display",
-          String(display),
-          "--sleep-multiplier",
-          sleepMultiplier,
-          ...additionalArgs,
-        ];
-
-        try {
-          Gio.Subprocess.new(
-            [this._settings.ddcutilPath, ...args],
-            Gio.SubprocessFlags.NONE,
-          );
-          console.log(`[DDCUtil] Set brightness to ${newBrightness}%`);
-        } catch (e) {
-          console.log(`[DDCUtil] Error setting brightness: ${e.message}`);
-        }
+            console.log(
+              `[DDCUtil] Set brightness to ${newBrightness}% on display ${resolvedDisplay}`,
+            );
+          } catch (error) {
+            console.log(`[DDCUtil] Error setting brightness: ${error.message}`);
+            this._detectedDisplays = null;
+          }
+        });
 
         return GLib.SOURCE_REMOVE;
       },
@@ -224,7 +245,8 @@ export class DDCUtil {
       ...this._settings,
       ...options,
     };
-    this._isAvailable = null;
+    this._resolvedPath = null;
+    this._detectedDisplays = null;
   }
 
   static cleanup() {

@@ -1,16 +1,17 @@
 # Brightness & Night Light Sliders
 
 <p align="center">
-  <img src="demo.png" alt="Demo" width="450">
+  <img src="demo.png" alt="Brightness and Night Light Sliders demo" width="450">
 </p>
 
-GNOME Shell extension that adds sliders to Quick Settings for external monitor brightness (DDC/CI) and Night Light temperature.
+GNOME Shell extension that adds Quick Settings sliders for external monitor brightness via DDC/CI and for Night Light temperature.
 
 ## Requirements
 
-- GNOME 45, 46, or 47
-- External monitor with DDC/CI support (for brightness slider)
-- Night Light enabled in **Settings > Displays > Night Light** (for night light slider)
+- GNOME Shell 45, 46, or 47
+- `ddcutil` for the brightness slider
+- A DDC/CI-capable external monitor for brightness control
+- Night Light enabled in `Settings > Displays > Night Light` for the Night Light slider
 
 ## Install
 
@@ -18,37 +19,57 @@ GNOME Shell extension that adds sliders to Quick Settings for external monitor b
 git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git /tmp/bnls && cd /tmp/bnls && ./install.sh
 ```
 
+The installer:
+
+- installs `ddcutil` if it is missing
+- loads `i2c-dev` if needed
+- checks whether `ddcutil detect` works
+- only applies extra permission fixes when the system reports a real permission problem
+- installs and enables the extension
+
+## Behavior
+
+- The brightness slider stays visible even if no DDC display is currently detected
+- Brightness control targets the first DDC/CI monitor reported by `ddcutil detect`
+- Moving the Night Light slider switches Night Light to manual all-day scheduling so GNOME does not immediately override the chosen temperature
+
 ## Troubleshooting
 
-**Brightness slider not appearing?**
+**Brightness slider visible but not working**
 
-The brightness slider stays visible, but control only works when `ddcutil` can see a DDC/CI display.
+```bash
+ddcutil detect
+journalctl --no-pager -b | grep -i NightLightSlider
+```
 
-1. Install ddcutil: `sudo apt install ddcutil`
-2. Verify monitor detection: `ddcutil detect`
-3. If permission denied, run:
-   ```bash
-   sudo modprobe i2c-dev
-   sudo usermod -aG i2c $USER
-   sudo cp /usr/share/ddcutil/data/60-ddcutil-i2c.rules /etc/udev/rules.d/
-   ```
-   Then reboot.
+If `ddcutil detect` shows no displays, your monitor path, dock, adapter, or display may not expose DDC/CI correctly.
 
-**Night Light slider not appearing?**
+**Night Light slider not showing**
 
-Enable Night Light first: **Settings > Displays > Night Light** > Turn it ON. The slider only shows when Night Light is enabled.
+Enable Night Light in `Settings > Displays > Night Light`.
 
-To inspect Night Light changes from the terminal, use:
+**Inspect Night Light temperature changes**
 
 ```bash
 gsettings monitor org.gnome.settings-daemon.plugins.color night-light-temperature
 ```
 
-**Screen freezes?** Increase delay in `extension.js`:
+**Need to reinstall**
 
-```js
-DDCUtil.configure({ queueMs: 200, sleepMultiplier: 2.0 });
+```bash
+rm -rf /tmp/bnls && git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git /tmp/bnls && cd /tmp/bnls && ./install.sh
 ```
+
+## GNOME Extensions Packaging
+
+For `extensions.gnome.org`, submit only the runtime files:
+
+- `extension.js`
+- `ddcutil.js`
+- `metadata.json`
+- `stylesheet.css`
+
+Do not include `install.sh`, screenshots, or other repository-only files in the upload zip.
 
 ## License
 
