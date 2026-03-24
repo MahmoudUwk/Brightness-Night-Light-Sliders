@@ -3,98 +3,243 @@
 EXTENSION_NAME="brightness-night-light-sliders@MahmoudUwk.github.com"
 INSTALL_DIR="$HOME/.local/share/gnome-shell/extensions"
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
+NEEDS_REBOOT=false
 
-echo "=== Brightness & Night Light Sliders Installer ==="
-echo
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-check_ddcutil() {
-    if ! command -v ddcutil &> /dev/null; then
-        echo "Warning: ddcutil is not installed."
-        echo "Monitor brightness control will not work without it."
-        echo
-        echo "Install with:"
-        echo "  Debian/Ubuntu: sudo apt install ddcutil"
-        echo "  Fedora:        sudo dnf install ddcutil"
-        echo "  Arch Linux:    sudo pacman -S ddcutil"
-        echo
-        read -p "Continue anyway? (y/N): " choice
-        case "$choice" in
-            y|Y ) echo "Continuing...";;
-            * ) echo "Aborted."; exit 1;;
-        esac
+print_header() {
+    echo
+    echo -e "${GREEN}=== Brightness & Night Light Sliders ===${NC}"
+    echo
+}
+
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_warning() { echo -e "${YELLOW}!${NC} $1"; }
+
+detect_package_manager() {
+    if command -v apt &> /dev/null; then
+        PM="apt"
+        INSTALL_CMD="sudo apt install -y ddcutil"
+    elif command -v dnf &> /dev/null; then
+        PM="dnf"
+        INSTALL_CMD="sudo dnf install -y ddcutil"
+    elif command -v pacman &> /dev/null; then
+        PM="pacman"
+        INSTALL_CMD="sudo pacman -S --noconfirm ddcutil"
     else
-        echo "Found ddcutil: $(ddcutil --version | head -1)"
+        PM="unknown"
+        INSTALL_CMD=""
     fi
 }
 
-check_i2c_group() {
-    if ! groups | grep -q '\bi2c\b'; then
-        echo "Warning: Your user is not in the 'i2c' group."
-        echo "Monitor brightness control may require elevated permissions."
-        echo
-        echo "To add yourself to the i2c group, run:"
-        echo "  sudo usermod -aG i2c \$USER"
-        echo "Then log out and back in."
-        echo
+setup_ddcutil() {
+    if command -v ddcutil &> /dev/null; then
+        print_success "ddcutil installed: $(ddcutil --version 2>/dev/null | head -1)"
+        return 0
+    fi
+
+    print_warning "ddcutil not found"
+    detect_package_manager
+    
+    if [ "$PM" = "unknown" ]; then
+        print_error "Could not detect package manager. Please install ddcutil manually."
+        return 1
+    fi
+
+    read -p "Install ddcutil? [Y/n]: " choice
+    if [[ "$choice" =~ ^[Nn]$ ]]; then
+        print_warning "Skipping ddcutil. Brightness control will not work."
+        return 1
+    fi
+
+    echo "Installing ddcutil..."
+    eval "$INSTALL_CMD"
+    
+    if command -v ddcutil &> /dev/null; then
+        print_success "ddcutil installed"
+        return 0
+    else
+        print_error "Failed to install ddcutil"
+        return 1
+    fi
+}
+
+setup_i2c_module() {
+    if lsmod | grep -q "^i2c_dev"; then
+        print_success "i2c-dev kernel module loaded"
+        return 0
+    fi
+
+    print_warning "i2c-dev module not loaded"
+    
+    if sudo modprobe i2c-dev 2>/dev/null; then
+        print_success "i2c-dev module loaded"
+        
+        if [ ! -f /etc/modules-load.d/i2c.conf ]; then
+            echo "i2c-dev" | sudo tee /etc/modules-load.d/i2c.conf > /dev/null
+            print_success "i2c-dev set to load on boot"
+        fi
+        return 0
+    else
+        print_error "Failed to load i2c-dev module"
+        return 1
+    fi
+}
+
+setup_i2c_group() {
+    if groups | grep -q '\bi2c\b'; then
+        print_success "User in i2c group"
+        return 0
+    fi
+
+    print_warning "User not in i2c group"
+
+    if ! getent group i2c > /dev/null; then
+        sudo groupadd --system i2c 2>/dev/null
+        print_success "Created i2c group"
+    fi
+
+    sudo usermod -aG i2c "$USER"
+    print_success "Added $USER to i2c group"
+    NEEDS_REBOOT=true
+    print_warning "Reboot required for group changes to take effect"
+    return 0
+}
+
+setup_udev_rules() {
+    local rules_file="/etc/udev/rules.d/60-ddcutil-i2c.rules"
+    local source_rules="/usr/share/ddcutil/data/60-ddcutil-i2c.rules"
+    
+    if [ -f "$rules_file" ]; then
+        print_success "Udev rules already configured"
+        return 0
+    fi
+
+    if [ -f "$source_rules" ]; then
+        sudo cp "$source_rules" "$rules_file"
+        sudo udevadm control --reload-rules 2>/dev/null
+        sudo udevadm trigger 2>/dev/null
+        print_success "Udev rules installed"
+        return 0
+    fi
+
+    print_warning "Udev rules source not found at $source_rules"
+    return 0
+}
+
+test_ddcutil() {
+    print_warning "Testing ddcutil..."
+    
+    if timeout 10 ddcutil detect 2>/dev/null | grep -q "Display"; then
+        print_success "Monitor detected by ddcutil"
+        return 0
+    else
+        local output
+        output=$(ddcutil detect 2>&1)
+        
+        if echo "$output" | grep -qi "permission denied"; then
+            print_warning "Permission denied - try rebooting first"
+            return 1
+        elif echo "$output" | grep -qi "no monitor"; then
+            print_warning "No DDC/CI monitor detected"
+            return 1
+        else
+            print_warning "ddcutil test inconclusive"
+            return 0
+        fi
     fi
 }
 
 install_extension() {
-    echo "Installing extension to: $INSTALL_DIR/$EXTENSION_NAME"
+    echo
+    echo "Installing extension..."
     
     mkdir -p "$INSTALL_DIR/$EXTENSION_NAME"
     
-    cp "$SOURCE_DIR/extension.js" "$INSTALL_DIR/$EXTENSION_NAME/"
-    cp "$SOURCE_DIR/ddcutil.js" "$INSTALL_DIR/$EXTENSION_NAME/"
-    cp "$SOURCE_DIR/metadata.json" "$INSTALL_DIR/$EXTENSION_NAME/"
-    cp "$SOURCE_DIR/stylesheet.css" "$INSTALL_DIR/$EXTENSION_NAME/"
+    for file in extension.js ddcutil.js metadata.json stylesheet.css; do
+        if [ -f "$SOURCE_DIR/$file" ]; then
+            cp "$SOURCE_DIR/$file" "$INSTALL_DIR/$EXTENSION_NAME/"
+        fi
+    done
     
-    if [ -f "$SOURCE_DIR/LICENSE" ]; then
-        cp "$SOURCE_DIR/LICENSE" "$INSTALL_DIR/$EXTENSION_NAME/"
-    fi
+    [ -f "$SOURCE_DIR/LICENSE" ] && cp "$SOURCE_DIR/LICENSE" "$INSTALL_DIR/$EXTENSION_NAME/"
     
-    echo "Files copied successfully."
+    print_success "Extension files installed"
 }
 
 enable_extension() {
-    echo
-    echo "Enabling extension..."
     gnome-extensions enable "$EXTENSION_NAME" 2>/dev/null
     
     if [ $? -eq 0 ]; then
-        echo "Extension enabled successfully."
+        print_success "Extension enabled"
     else
-        echo "Note: You may need to restart GNOME Shell first:"
-        echo "  X11:     Press Alt+F2, type 'r', press Enter"
-        echo "  Wayland: Log out and log back in"
-        echo
-        echo "Then enable with:"
+        print_warning "Could not enable extension"
+        echo "  Restart GNOME Shell, then run:"
         echo "  gnome-extensions enable $EXTENSION_NAME"
     fi
 }
 
 uninstall() {
-    echo "Uninstalling extension..."
+    echo "Uninstalling..."
     gnome-extensions disable "$EXTENSION_NAME" 2>/dev/null
     rm -rf "$INSTALL_DIR/$EXTENSION_NAME"
-    echo "Extension uninstalled."
+    print_success "Extension uninstalled"
 }
 
-case "${1:-install}" in
-    install)
-        check_ddcutil
-        check_i2c_group
-        install_extension
-        enable_extension
+print_final_message() {
+    echo
+    echo -e "${GREEN}=== Installation Complete ===${NC}"
+    
+    if [ "$NEEDS_REBOOT" = true ]; then
         echo
-        echo "=== Installation Complete ==="
-        echo "If the sliders don't appear, restart GNOME Shell and re-enable the extension."
-        ;;
-    uninstall)
-        uninstall
-        ;;
-    *)
-        echo "Usage: $0 [install|uninstall]"
-        exit 1
-        ;;
-esac
+        echo -e "${YELLOW}⚠ REBOOT REQUIRED${NC}"
+        echo "You were added to the i2c group."
+        echo "Run: sudo reboot"
+    else
+        echo
+        echo "If sliders don't appear, restart GNOME Shell:"
+        echo "  X11:     Alt+F2, type 'r', Enter"
+        echo "  Wayland: Log out and back in"
+    fi
+}
+
+main() {
+    print_header
+    
+    case "${1:-install}" in
+        install)
+            setup_ddcutil || true
+            setup_i2c_module || true
+            setup_i2c_group || true
+            setup_udev_rules || true
+            test_ddcutil || true
+            install_extension
+            enable_extension
+            print_final_message
+            ;;
+        uninstall)
+            uninstall
+            ;;
+        setup)
+            setup_ddcutil || true
+            setup_i2c_module || true
+            setup_i2c_group || true
+            setup_udev_rules || true
+            test_ddcutil || true
+            print_final_message
+            ;;
+        *)
+            echo "Usage: $0 [install|uninstall|setup]"
+            echo "  install  - Install extension and dependencies"
+            echo "  uninstall - Remove extension"
+            echo "  setup    - Only setup dependencies (no extension install)"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
