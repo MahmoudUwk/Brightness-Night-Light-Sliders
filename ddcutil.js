@@ -16,6 +16,9 @@ export class DDCUtil {
   static _activeProcesses = new Set();
   static _brightnessMetadata = new Map();
   static _generation = 0;
+  static _pendingBrightness = null;
+  static _pendingBrightnessTime = 0;
+  static PENDING_COOLDOWN_MS = 2000;
   static _settings = {
     queueMs: DDCUtil.DEFAULT_QUEUE_MS,
     sleepMultiplier: DDCUtil.DEFAULT_SLEEP_MULTIPLIER,
@@ -426,6 +429,14 @@ export class DDCUtil {
   }
 
   static async getBrightness(display = null) {
+    if (this._pendingBrightness !== null) {
+      const elapsed = Date.now() - this._pendingBrightnessTime;
+      if (elapsed < this.PENDING_COOLDOWN_MS) {
+        return this._pendingBrightness;
+      }
+      this._pendingBrightness = null;
+    }
+
     const generation = this._generation;
 
     try {
@@ -462,6 +473,9 @@ export class DDCUtil {
     const generation = this._generation;
     const requestSequence = ++this._writeSequence;
     const newBrightness = Math.round(Math.max(0, Math.min(100, value)));
+
+    this._pendingBrightness = newBrightness;
+    this._pendingBrightnessTime = Date.now();
 
     this._debounceTimeout = GLib.timeout_add(
       GLib.PRIORITY_DEFAULT,
@@ -505,6 +519,8 @@ export class DDCUtil {
                 '--sleep-multiplier',
                 String(this._settings.sleepMultiplier),
               ]);
+
+              this._pendingBrightness = null;
 
               if (displayInfo.key)
                 this._preferredDisplayKey = displayInfo.key;
@@ -552,6 +568,7 @@ export class DDCUtil {
 
   static cleanup() {
     this._generation += 1;
+    this._pendingBrightness = null;
 
     if (this._debounceTimeout) {
       GLib.source_remove(this._debounceTimeout);
