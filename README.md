@@ -38,20 +38,66 @@ git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git && cd
 ./install.sh uninstall # Remove
 ```
 
+## Known Issues
+
+### Brightness slider not working
+
+- **Laptop displays**: Internal panels (eDP/LVDS/DSI) don't support DDC/CI. Only external monitors work.
+- **No displays detected**: Run `ddcutil detect` to check if your monitor/dock/adapter supports DDC/CI.
+- **Permission denied**: The installer handles this, but if brightness stopped working after an update, run `./install.sh setup` again.
+
+### GNOME Shell crashes
+
+This extension uses defensive programming to avoid crashes during monitor topology changes:
+- Debounced monitor change handling (1 second settle time)
+- Generation tokens to cancel stale async operations
+- Monitor validity guards before applying changes
+
+If you experience crashes:
+1. Update your system: `sudo apt update && sudo apt full-upgrade -y && reboot`
+2. Check logs: `journalctl -b | grep -iE "gnome-shell|mutter"`
+3. Try X11 instead of Wayland (login screen -> gear icon -> "Ubuntu on Xorg")
+4. Report an issue with the info below
+
 ## Troubleshooting
 
-**Brightness slider not working**
-
 ```bash
+# Check if monitor supports DDC/CI
 ddcutil detect
-```
 
-- If no displays found, your monitor/dock/adapter may not support DDC/CI
-- Brightness only works on external monitors, not laptop internal displays
+# Check extension logs
+journalctl -b | grep -i BrightnessNightLightSliders
+
+# Check installation status
+./install.sh status
+```
 
 **Night Light slider not showing**
 
 Enable Night Light in Settings > Displays > Night Light.
+
+## Reporting Issues
+
+When reporting issues, include:
+
+1. **System info**:
+   ```bash
+   gnome-shell --version
+   echo $XDG_SESSION_TYPE
+   ./install.sh status
+   ```
+
+2. **Monitor setup**: Laptop? External monitor? Dock? Connection type (HDMI/DP/USB-C)?
+
+3. **Logs**:
+   ```bash
+   journalctl -b | grep -iE "gnome-shell|mutter|BrightnessNightLightSliders" | tail -50
+   ```
+
+4. **Crash report** (if applicable):
+   ```bash
+   ls -la /var/crash/
+   ```
 
 ## License
 
