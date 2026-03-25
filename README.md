@@ -17,24 +17,19 @@ GNOME Shell extension that adds brightness and Night Light sliders to Quick Sett
 git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git && cd Brightness-Night-Light-Sliders && ./install.sh
 ```
 
-## Update
+## Reinstall / Update
 
 ```bash
-cd Brightness-Night-Light-Sliders && git pull && ./install.sh update
+git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git && cd Brightness-Night-Light-Sliders && ./install.sh
 ```
 
-Or if you deleted the cloned directory:
-
-```bash
-git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git && cd Brightness-Night-Light-Sliders && ./install.sh update
-```
+Running `./install.sh` again removes the old version and installs the new one.
 
 ## Commands
 
 ```bash
-./install.sh          # Install
-./install.sh update   # Update to latest version
-./install.sh status   # Check installation status
+./install.sh           # Install or reinstall
+./install.sh status    # Check installation status
 ./install.sh uninstall # Remove
 ```
 
@@ -44,7 +39,6 @@ git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git && cd
 
 - **Laptop displays**: Internal panels (eDP/LVDS/DSI) don't support DDC/CI. Only external monitors work.
 - **No displays detected**: Run `ddcutil detect` to check if your monitor/dock/adapter supports DDC/CI.
-- **Permission denied**: The installer handles this, but if brightness stopped working after an update, run `./install.sh setup` again.
 
 ### GNOME Shell crashes
 

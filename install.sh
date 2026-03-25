@@ -36,10 +36,8 @@ usage() {
 Usage: $0 [COMMAND]
 
 Commands:
-  install     Install the extension (default)
-  update      Update to the latest version
+  install     Install or reinstall (default)
   uninstall   Remove the extension
-  setup       Run ddcutil/i2c setup without installing
   status      Show installation status
 
 EOF
@@ -249,6 +247,17 @@ setup_permissions_if_needed() {
     fi
 }
 
+remove_old_version() {
+    if [[ -d "$INSTALL_DIR/$EXTENSION_NAME" ]]; then
+        print_info "Removing old version..."
+        if command -v gnome-extensions &> /dev/null; then
+            gnome-extensions disable "$EXTENSION_NAME" 2>/dev/null || true
+        fi
+        rm -rf "$INSTALL_DIR/$EXTENSION_NAME"
+        print_success "Old version removed"
+    fi
+}
+
 install_extension() {
     print_info "Installing extension files..."
     
@@ -368,24 +377,6 @@ uninstall() {
     fi
 }
 
-update() {
-    print_info "Updating extension..."
-    
-    if [[ -d "$INSTALL_DIR/$EXTENSION_NAME" ]]; then
-        print_info "Removing old version..."
-        if command -v gnome-extensions &> /dev/null; then
-            gnome-extensions disable "$EXTENSION_NAME" 2>/dev/null || true
-        fi
-        rm -rf "$INSTALL_DIR/$EXTENSION_NAME"
-        print_success "Old version removed"
-    fi
-    
-    verify_source_files
-    install_extension
-    enable_extension
-    print_final_message
-}
-
 status() {
     local installed=false
     local enabled=false
@@ -441,6 +432,7 @@ main() {
             check_gnome_shell_running
             check_gnome_version
             verify_source_files
+            remove_old_version
             setup_ddcutil || true
             ensure_i2c_module || true
             setup_permissions_if_needed || true
@@ -448,18 +440,8 @@ main() {
             enable_extension
             print_final_message
             ;;
-        update)
-            check_gnome_shell_running
-            check_gnome_version
-            update
-            ;;
         uninstall)
             uninstall
-            ;;
-        setup)
-            setup_ddcutil || true
-            ensure_i2c_module || true
-            setup_permissions_if_needed || true
             ;;
         status)
             status
