@@ -11,6 +11,7 @@ GNOME Shell extension that adds Quick Settings sliders for external monitor brig
 - GNOME Shell 45, 46, or 47
 - `ddcutil` for the brightness slider
 - A DDC/CI-capable external monitor for brightness control
+- Internal laptop panels such as `eDP`, `LVDS`, and `DSI` do not support DDC/CI brightness control through this extension
 - Night Light enabled in `Settings > Displays > Night Light` for the Night Light slider
 
 ## Install
@@ -32,7 +33,8 @@ If the installer adds your user to the `i2c` group, reboot before testing bright
 ## Behavior
 
 - The brightness slider stays visible even if no DDC display is currently detected
-- Brightness control targets the first DDC/CI monitor reported by `ddcutil detect`
+- Brightness control keeps using the last successful DDC/CI display when it is still present; otherwise it reselects a monitor from fresh `ddcutil detect` data with a deterministic external-first fallback
+- Brightness refresh is event-driven: it syncs on extension startup, when Quick Settings opens, and on GNOME monitor topology changes, with no periodic polling loop
 - Moving the Night Light slider switches Night Light to manual all-day scheduling so GNOME does not immediately override the chosen temperature
 
 ## Troubleshooting
@@ -41,10 +43,16 @@ If the installer adds your user to the `i2c` group, reboot before testing bright
 
 ```bash
 ddcutil detect
-journalctl --no-pager -b | grep -i NightLightSlider
+journalctl --no-pager -b | grep -i BrightnessNightLightSliders
 ```
 
 If `ddcutil detect` shows no displays, your monitor path, dock, adapter, or display may not expose DDC/CI correctly.
+
+If `ddcutil detect` only reports an internal laptop panel like `eDP-1`, that is expected: internal panels do not expose DDC/CI brightness control.
+
+If brightness feels stuck after docking or unplugging displays, reconnect the monitor and reopen Quick Settings once; the extension refreshes its DDC selection on GNOME monitor topology changes instead of polling continuously.
+
+If you upgrade the extension while logged in and GNOME Shell keeps the old extension state, restart GNOME Shell on X11 or log out and back in on Wayland.
 
 **Night Light slider not showing**
 

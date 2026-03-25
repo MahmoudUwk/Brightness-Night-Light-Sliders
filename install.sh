@@ -186,6 +186,7 @@ install_extension() {
 }
 
 enable_extension() {
+    gnome-extensions disable "$EXTENSION_NAME" 2>/dev/null || true
     gnome-extensions enable "$EXTENSION_NAME" 2>/dev/null
 
     if [ $? -eq 0 ]; then
@@ -218,10 +219,13 @@ print_final_message() {
         echo "  Wayland: Log out and back in"
     fi
 
+    echo "Brightness via DDC/CI works only on supported external monitors."
+    echo "Laptop internal eDP/LVDS/DSI panels do not support DDC/CI brightness control."
+
     echo
     echo "Diagnostics:"
     echo "  ddcutil detect"
-    echo "  journalctl --no-pager -b | grep -i NightLightSlider"
+    echo "  journalctl --no-pager -b | grep -i BrightnessNightLightSliders"
 }
 
 main() {
