@@ -62,29 +62,6 @@ verify_source_files() {
     fi
 }
 
-maybe_self_update() {
-    if ! git -C "$SOURCE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        return 0
-    fi
-
-    if ! git -C "$SOURCE_DIR" remote get-url origin >/dev/null 2>&1; then
-        print_info "Git repo found, but no origin remote; using local files"
-        return 0
-    fi
-
-    if [[ -n "$(git -C "$SOURCE_DIR" status --porcelain 2>/dev/null)" ]]; then
-        print_warning "Local git changes detected; skipping auto-update and using current files"
-        return 0
-    fi
-
-    print_info "Updating source from origin..."
-    if git -C "$SOURCE_DIR" pull --ff-only; then
-        print_success "Source updated"
-    else
-        print_warning "Auto-update failed; using current files"
-    fi
-}
-
 get_session_type() {
     if [[ -n "${XDG_SESSION_TYPE:-}" ]]; then
         echo "$XDG_SESSION_TYPE"
@@ -235,12 +212,15 @@ main() {
     echo -e "${GREEN}=== Brightness & Night Light Sliders ===${NC}"
     echo
 
+    if [[ "$SOURCE_DIR" != "$PWD" ]]; then
+        print_warning "Run this from the repository root: cd \"$SOURCE_DIR\" && ./install.sh"
+    fi
+
     ensure_not_root
 
     case "$command" in
         install)
             verify_source_files
-            maybe_self_update
             remove_old_version
             install_extension
             enable_extension || true
