@@ -49,12 +49,20 @@ const BrightnessSlider = GObject.registerClass(
       this._supportsBrightness = DDCUtil.isAvailable();
       this.visible = this._supportsBrightness;
 
-      this._destroyed = false;
-      this._forceRefreshPending = false;
+ this._destroyed = false;
+      this._supportsBrightness = false;
+      this._destroyed = true;
+
+      this._syncIdleId = null;
       this._syncBusy = false;
       this._syncRerunPending = false;
-      this._lastErrorMessage = null;
+      this._forceRefreshPending = false;
 
+      this._menuConnectRetryId = null;
+      this._menuConnectAttempts = 0;
+      this._menuConnectWarningLogged = false;
+
+      this._syncRequestId = 0;
       this._menuConnectRetryId = null;
       this._menuConnectAttempts = 0;
       this._menuConnectWarningLogged = false;
@@ -96,6 +104,23 @@ const BrightnessSlider = GObject.registerClass(
     _sliderChanged() {
       if (this._destroyed || !this._supportsBrightness)
         return;
+
+      this._userInteracting = true;
+
+      if (this._interactionTimeoutId) {
+        GLib.source_remove(this._interactionTimeoutId);
+        this._interactionTimeoutId = null;
+      }
+
+      this._interactionTimeoutId = GLib.timeout_add(
+        GLib.PRIORITY_DEFAULT,
+        500,
+        () => {
+          this._interactionTimeoutId = null;
+          this._userInteracting = false;
+          return GLib.SOURCE_REMOVE;
+        },
+      );
 
       const level = Math.round(this.slider.value * 100);
       DDCUtil.setBrightness(level);
@@ -281,9 +306,8 @@ const BrightnessSlider = GObject.registerClass(
           return;
         }
 
-        const newMonitorCount = safeGetMonitors();
-        if (newMonitorCount !== currentMonitors) {
-          debugLog(`Monitor count changed during sync (${currentMonitors} -> ${newMonitorCount}), discarding`);
+        if (this._userInteracting) {
+          debugLog("User interacting, skipping slider update");
           return;
         }
 
@@ -354,8 +378,13 @@ const BrightnessSlider = GObject.registerClass(
       }
 
       if (this._menuOpenDebounceId) {
-        GLib.source_remove(this._menuOpenDebounceId);
+        GLib.source.remove(this._menuOpenDebounceId);
         this._menuOpenDebounceId = null;
+      }
+
+      if (this._interactionTimeoutId) {
+        GLib.source_remove(this._interactionTimeoutId);
+        this._interactionTimeoutId = null;
       }
 
       if (this._monitorsChangedId) {
