@@ -14,26 +14,13 @@ GNOME Shell extension that adds brightness and Night Light sliders to Quick Sett
 
 ## Install
 
-Clone into a folder, then run the installer from that folder:
+One command install/update:
 
 ```bash
-git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git && cd Brightness-Night-Light-Sliders && ./install.sh
+rm -rf /tmp/brightness-night-light-sliders && git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git /tmp/brightness-night-light-sliders && cd /tmp/brightness-night-light-sliders && ./install.sh
 ```
 
-If the folder already exists and you want a fresh copy, replace it first:
-
-```bash
-rm -rf Brightness-Night-Light-Sliders && git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git && cd Brightness-Night-Light-Sliders && ./install.sh
-```
-
-## Commands
-
-```bash
-cd Brightness-Night-Light-Sliders
-./install.sh           # Install
-./install.sh status    # Check installation status
-./install.sh uninstall # Remove
-```
+If you rerun it, it replaces the tmp clone with a fresh copy first.
 
 ## Known Issues
 

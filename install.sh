@@ -143,10 +143,6 @@ print_final_message() {
     echo
     echo -e "${GREEN}=== Done ===${NC}"
     echo
-    echo "Commands:"
-    echo "  $0 status"
-    echo "  $0 uninstall"
-    echo
     echo "Notes:"
     echo "  - Brightness requires DDC/CI-compatible external displays"
     echo "  - Night Light follows the GNOME color settings schema"
