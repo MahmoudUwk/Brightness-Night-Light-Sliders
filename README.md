@@ -9,6 +9,7 @@ GNOME Shell extension that adds brightness and Night Light sliders to Quick Sett
 ## Requirements
 
 - GNOME 45, 46, or 47
+- `ddcutil` installed and available in `PATH`
 - External monitor with DDC/CI support (brightness slider won't work on laptop displays)
 
 ## Install
@@ -24,6 +25,7 @@ git clone https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders.git && cd
 ```
 
 Running `./install.sh` again removes the old version and installs the new one.
+The installer only copies the extension files into your local GNOME extensions folder and tries to enable it.
 
 ## Commands
 
@@ -39,6 +41,7 @@ Running `./install.sh` again removes the old version and installs the new one.
 
 - **Laptop displays**: Internal panels (eDP/LVDS/DSI) don't support DDC/CI. Only external monitors work.
 - **No displays detected**: Run `ddcutil detect` to check if your monitor/dock/adapter supports DDC/CI.
+- **ddcutil missing**: Install `ddcutil` first, then reinstall the extension.
 
 ### GNOME Shell crashes
 

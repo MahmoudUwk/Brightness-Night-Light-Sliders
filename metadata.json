@@ -5,6 +5,5 @@
   "version": 1,
   "shell-version": ["45", "46", "47"],
   "gettext-domain": "gnome-shell-extensions-night-light-slider",
-  "url": "https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders",
-  "settings-schema": ""
+  "url": "https://github.com/MahmoudUwk/Brightness-Night-Light-Sliders"
 }

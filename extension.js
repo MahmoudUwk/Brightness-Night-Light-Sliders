@@ -20,8 +20,6 @@ const CONFIG = {
   DEBUG: false,
   TOPOLOGY_DEBOUNCE_MS: 1000,
   SYNC_DEBOUNCE_MS: 100,
-  MENU_OPEN_COOLDOWN_MS: 500,
-  MAX_MONITOR_RETRIES: 3,
 };
 
 const debugLog = (msg) => CONFIG.DEBUG && console.log(`[BNLS DEBUG] ${msg}`);
@@ -48,10 +46,14 @@ const BrightnessSlider = GObject.registerClass(
       });
 
       this.add_style_class_name("bnl-slider");
-      this.visible = true;
+      this._supportsBrightness = DDCUtil.isAvailable();
+      this.visible = this._supportsBrightness;
 
       this._destroyed = false;
       this._forceRefreshPending = false;
+      this._syncBusy = false;
+      this._syncRerunPending = false;
+      this._lastErrorMessage = null;
 
       this._menuConnectRetryId = null;
       this._menuConnectAttempts = 0;
@@ -65,29 +67,34 @@ const BrightnessSlider = GObject.registerClass(
       this._lastTopologyChange = 0;
 
       this._menuOpenDebounceId = null;
-      this._lastMenuOpen = 0;
 
       this._monitorCount = safeGetMonitors();
 
       this._quickSettingsOpenedId = null;
+      this._quickSettingsMenu = null;
       this.slider.accessible_name = _("Brightness");
       this._sliderChangedId = this.slider.connect(
         "notify::value",
         this._sliderChanged.bind(this),
       );
 
-      this._ensureQuickSettingsMenuConnection();
+      if (this._supportsBrightness) {
+        this._ensureQuickSettingsMenuConnection();
 
-      this._monitorsChangedId = Main.layoutManager.connect(
-        "monitors-changed",
-        this._handleMonitorsChanged.bind(this),
-      );
+        this._monitorsChangedId = Main.layoutManager.connect(
+          "monitors-changed",
+          this._handleMonitorsChanged.bind(this),
+        );
+      } else {
+        this._monitorsChangedId = null;
+      }
 
-      this._queueSync(true);
+      if (this._supportsBrightness)
+        this._queueSync(true);
     }
 
     _sliderChanged() {
-      if (this._destroyed)
+      if (this._destroyed || !this._supportsBrightness)
         return;
 
       const level = Math.round(this.slider.value * 100);
@@ -95,7 +102,7 @@ const BrightnessSlider = GObject.registerClass(
     }
 
     _handleMonitorsChanged() {
-      if (this._destroyed)
+      if (this._destroyed || !this._supportsBrightness)
         return;
 
       const now = Date.now();
@@ -137,15 +144,8 @@ const BrightnessSlider = GObject.registerClass(
     }
 
     _handleMenuOpenStateChanged(_menu, isOpen) {
-      if (this._destroyed || !isOpen)
+      if (this._destroyed || !this._supportsBrightness || !isOpen)
         return;
-
-      const now = Date.now();
-      if (now - this._lastMenuOpen < CONFIG.MENU_OPEN_COOLDOWN_MS) {
-        debugLog("Menu open debounced");
-        return;
-      }
-      this._lastMenuOpen = now;
 
       if (this._menuOpenDebounceId) {
         GLib.source_remove(this._menuOpenDebounceId);
@@ -165,12 +165,13 @@ const BrightnessSlider = GObject.registerClass(
     }
 
     _ensureQuickSettingsMenuConnection() {
-      if (this._destroyed || this._quickSettingsOpenedId)
+      if (this._destroyed || !this._supportsBrightness || this._quickSettingsOpenedId)
         return;
 
       const quickSettings = getQuickSettings();
       if (quickSettings?.menu) {
-        this._quickSettingsOpenedId = quickSettings.menu.connect(
+        this._quickSettingsMenu = quickSettings.menu;
+        this._quickSettingsOpenedId = this._quickSettingsMenu.connect(
           "open-state-changed",
           this._handleMenuOpenStateChanged.bind(this),
         );
@@ -203,10 +204,15 @@ const BrightnessSlider = GObject.registerClass(
     }
 
     _queueSync(forceRefresh = false) {
-      if (this._destroyed)
+      if (this._destroyed || !this._supportsBrightness)
         return;
 
       this._forceRefreshPending = this._forceRefreshPending || forceRefresh;
+
+      if (this._syncBusy) {
+        this._syncRerunPending = true;
+        return;
+      }
 
       if (this._syncIdleId)
         return;
@@ -214,7 +220,7 @@ const BrightnessSlider = GObject.registerClass(
       this._syncIdleId = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
         this._syncIdleId = null;
 
-        if (this._destroyed)
+        if (this._destroyed || !this._supportsBrightness)
           return GLib.SOURCE_REMOVE;
 
         const shouldForceRefresh = this._forceRefreshPending;
@@ -226,10 +232,22 @@ const BrightnessSlider = GObject.registerClass(
     }
 
     async _syncBrightness(forceRefresh = false) {
+      if (this._destroyed || !this._supportsBrightness)
+        return;
+
+      if (this._syncBusy) {
+        this._syncRerunPending = true;
+        this._forceRefreshPending = this._forceRefreshPending || forceRefresh;
+        return;
+      }
+
+      this._syncBusy = true;
       const requestId = ++this._syncRequestId;
       const topologyGen = this._topologyGeneration;
+      const shouldForceRefresh = this._forceRefreshPending || forceRefresh;
+      this._forceRefreshPending = false;
 
-      if (forceRefresh) {
+      if (shouldForceRefresh) {
         debugLog(`Forcing topology refresh (request ${requestId}, gen ${topologyGen})`);
         DDCUtil.handleMonitorTopologyChange();
       }
@@ -273,6 +291,7 @@ const BrightnessSlider = GObject.registerClass(
         this.slider.value = level / 100;
         this.slider.unblock_signal_handler(this._sliderChangedId);
         this.visible = true;
+        this._lastErrorMessage = null;
 
         debugLog(`Brightness synced: ${level}%`);
       } catch (error) {
@@ -291,9 +310,26 @@ const BrightnessSlider = GObject.registerClass(
           return;
         }
 
-        debugLog(`Sync error: ${error.message}`);
-        extLog(`Could not sync brightness: ${error.message}`);
-        this.visible = true;
+        const message = error?.message ?? String(error);
+        debugLog(`Sync error: ${message}`);
+
+        if (message === 'ddcutil not found in PATH' || message === 'No DDC/CI display detected') {
+          this.visible = false;
+        } else {
+          this.visible = true;
+        }
+
+        if (message !== this._lastErrorMessage) {
+          this._lastErrorMessage = message;
+          extLog(`Could not sync brightness: ${message}`);
+        }
+      } finally {
+        this._syncBusy = false;
+
+        if (this._syncRerunPending && !this._destroyed) {
+          this._syncRerunPending = false;
+          this._queueSync(this._forceRefreshPending);
+        }
       }
     }
 
@@ -332,15 +368,15 @@ const BrightnessSlider = GObject.registerClass(
       }
 
       if (this._quickSettingsOpenedId) {
-        const quickSettings = getQuickSettings();
-        if (quickSettings?.menu) {
+        if (this._quickSettingsMenu) {
           try {
-            quickSettings.menu.disconnect(this._quickSettingsOpenedId);
+            this._quickSettingsMenu.disconnect(this._quickSettingsOpenedId);
           } catch (e) {
             debugLog(`Error disconnecting menu: ${e.message}`);
           }
         }
         this._quickSettingsOpenedId = null;
+        this._quickSettingsMenu = null;
       }
 
       if (this._sliderChangedId) {
@@ -361,21 +397,26 @@ const ICON_NAME = "night-light-symbolic";
 const COLOR_SCHEMA = "org.gnome.settings-daemon.plugins.color";
 const TEMPERATURE_KEY = "night-light-temperature";
 const ENABLE_KEY = "night-light-enabled";
-const SCHEDULE_AUTOMATIC_KEY = "night-light-schedule-automatic";
-const SCHEDULE_FROM_KEY = "night-light-schedule-from";
-const SCHEDULE_TO_KEY = "night-light-schedule-to";
 
 class TemperatureUtils {
   static MIN_TEMP = 1700;
   static MAX_TEMP = 4700;
 
+  static clamp(value) {
+    if (!Number.isFinite(value))
+      return 0;
+
+    return Math.min(1, Math.max(0, value));
+  }
+
   static normalize(temp) {
-    return 1 - (temp - this.MIN_TEMP) / (this.MAX_TEMP - this.MIN_TEMP);
+    const normalized = 1 - (temp - this.MIN_TEMP) / (this.MAX_TEMP - this.MIN_TEMP);
+    return this.clamp(normalized);
   }
 
   static denormalize(value) {
     return Math.round(
-      (1 - value) * (this.MAX_TEMP - this.MIN_TEMP) + this.MIN_TEMP,
+      (1 - this.clamp(value)) * (this.MAX_TEMP - this.MIN_TEMP) + this.MIN_TEMP,
     );
   }
 }
@@ -427,18 +468,15 @@ const NightLightItem = GObject.registerClass(
       const value = this.slider.value;
       const temperature = TemperatureUtils.denormalize(value);
 
-      if (this._settings.get_boolean(SCHEDULE_AUTOMATIC_KEY)) {
-        this._settings.set_boolean(SCHEDULE_AUTOMATIC_KEY, false);
-        this._settings.set_double(SCHEDULE_FROM_KEY, 0.0);
-        this._settings.set_double(SCHEDULE_TO_KEY, 23.99);
-      }
-
       this._settings.set_uint(TEMPERATURE_KEY, temperature);
     }
 
     _sync() {
       const temperature = this._settings.get_uint(TEMPERATURE_KEY);
       const value = TemperatureUtils.normalize(temperature);
+      if (!this._sliderChangedId)
+        return;
+
       this.slider.block_signal_handler(this._sliderChangedId);
       this.slider.value = value;
       this.slider.unblock_signal_handler(this._sliderChangedId);
@@ -501,6 +539,18 @@ const Indicator = GObject.registerClass(
           this._quickSettingsWarningLogged = false;
         } catch (e) {
           extLog(`Error attaching to Quick Settings: ${e.message}`);
+          this._quickSettingsAttachAttempts += 1;
+          if (!this._quickSettingsAttachRetryId) {
+            this._quickSettingsAttachRetryId = GLib.timeout_add(
+              GLib.PRIORITY_DEFAULT,
+              QUICK_SETTINGS_RETRY_MS,
+              () => {
+                this._quickSettingsAttachRetryId = null;
+                this._attachToQuickSettings(brightnessSlider);
+                return GLib.SOURCE_REMOVE;
+              },
+            );
+          }
         }
         return;
       }

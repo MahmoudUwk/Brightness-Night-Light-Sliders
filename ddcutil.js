@@ -10,15 +10,13 @@ export class DDCUtil {
   static _debounceTimeout = null;
   static _commandQueue = Promise.resolve();
   static _resolvedPath = null;
+  static _detectPromise = null;
   static _detectedDisplays = null;
   static _preferredDisplayKey = null;
   static _writeSequence = 0;
   static _activeProcesses = new Set();
   static _brightnessMetadata = new Map();
   static _generation = 0;
-  static _pendingBrightness = null;
-  static _pendingBrightnessTime = 0;
-  static PENDING_COOLDOWN_MS = 2000;
   static _settings = {
     queueMs: DDCUtil.DEFAULT_QUEUE_MS,
     sleepMultiplier: DDCUtil.DEFAULT_SLEEP_MULTIPLIER,
@@ -372,25 +370,39 @@ export class DDCUtil {
     if (!forceRefresh && this._detectedDisplays)
       return this._detectedDisplays;
 
-    try {
-      const output = await this._enqueue(async () => {
+    if (!forceRefresh && this._detectPromise)
+      return this._detectPromise;
+
+    const detectPromise = (async () => {
+      try {
+        const output = await this._enqueue(async () => {
+          this._ensureGeneration(generation);
+          return this._runCommand(['detect'], { includeAdditionalArgs: false });
+        });
+
         this._ensureGeneration(generation);
-        return this._runCommand(['detect'], { includeAdditionalArgs: false });
-      });
+        this._detectedDisplays = this._parseDetectOutput(output).sort((left, right) =>
+          this._compareDisplays(left, right),
+        );
+      } catch (error) {
+        console.log(`[DDCUtil] Error detecting displays: ${error.message}`);
+        if (error.message === 'ddcutil not found in PATH')
+          throw error;
 
-      this._ensureGeneration(generation);
-      this._detectedDisplays = this._parseDetectOutput(output).sort((left, right) =>
-        this._compareDisplays(left, right),
-      );
-    } catch (error) {
-      console.log(`[DDCUtil] Error detecting displays: ${error.message}`);
-      if (error.message === 'ddcutil not found in PATH')
-        throw error;
+        this._detectedDisplays = [];
+      }
 
-      this._detectedDisplays = [];
-    }
+      return this._detectedDisplays;
+    })();
 
-    return this._detectedDisplays;
+    const trackedPromise = detectPromise.finally(() => {
+      if (this._detectPromise === trackedPromise)
+        this._detectPromise = null;
+    });
+
+    this._detectPromise = trackedPromise;
+
+    return this._detectPromise;
   }
 
   static _selectDisplay(displays) {
@@ -429,14 +441,6 @@ export class DDCUtil {
   }
 
   static async getBrightness(display = null) {
-    if (this._pendingBrightness !== null) {
-      const elapsed = Date.now() - this._pendingBrightnessTime;
-      if (elapsed < this.PENDING_COOLDOWN_MS) {
-        return this._pendingBrightness;
-      }
-      this._pendingBrightness = null;
-    }
-
     const generation = this._generation;
 
     try {
@@ -473,9 +477,6 @@ export class DDCUtil {
     const generation = this._generation;
     const requestSequence = ++this._writeSequence;
     const newBrightness = Math.round(Math.max(0, Math.min(100, value)));
-
-    this._pendingBrightness = newBrightness;
-    this._pendingBrightnessTime = Date.now();
 
     this._debounceTimeout = GLib.timeout_add(
       GLib.PRIORITY_DEFAULT,
@@ -520,8 +521,6 @@ export class DDCUtil {
                 String(this._settings.sleepMultiplier),
               ]);
 
-              this._pendingBrightness = null;
-
               if (displayInfo.key)
                 this._preferredDisplayKey = displayInfo.key;
 
@@ -561,6 +560,7 @@ export class DDCUtil {
       ...options,
     };
     this._resolvedPath = null;
+    this._detectPromise = null;
     this._detectedDisplays = null;
     this._preferredDisplayKey = null;
     this._brightnessMetadata.clear();
@@ -568,7 +568,7 @@ export class DDCUtil {
 
   static cleanup() {
     this._generation += 1;
-    this._pendingBrightness = null;
+    this._detectPromise = null;
 
     if (this._debounceTimeout) {
       GLib.source_remove(this._debounceTimeout);
