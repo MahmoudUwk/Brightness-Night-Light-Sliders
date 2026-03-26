@@ -49,25 +49,17 @@ const BrightnessSlider = GObject.registerClass(
       this._supportsBrightness = DDCUtil.isAvailable();
       this.visible = this._supportsBrightness;
 
- this._destroyed = false;
-      this._supportsBrightness = false;
-      this._destroyed = true;
-
+      this._destroyed = false;
       this._syncIdleId = null;
       this._syncBusy = false;
       this._syncRerunPending = false;
       this._forceRefreshPending = false;
+      this._lastErrorMessage = null;
 
       this._menuConnectRetryId = null;
       this._menuConnectAttempts = 0;
       this._menuConnectWarningLogged = false;
 
-      this._syncRequestId = 0;
-      this._menuConnectRetryId = null;
-      this._menuConnectAttempts = 0;
-      this._menuConnectWarningLogged = false;
-
-      this._syncIdleId = null;
       this._syncRequestId = 0;
 
       this._topologyDebounceId = null;
