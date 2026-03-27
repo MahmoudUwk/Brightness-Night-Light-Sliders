@@ -43,6 +43,8 @@ The extension now avoids aggressive DDC/CI refreshes during monitor topology cha
 Topology changes now only refresh when Quick Settings is opened, instead of probing the monitor in the background.
 It also skips the initial brightness probe at shell startup, which further reduces early display resets on some monitors.
 Brightness syncing is now intentionally minimized; the slider writes brightness without probing the display unless GNOME explicitly asks for a refresh.
+The brightness side is now write-only and avoids background refresh logic to stay predictable.
+The DDC/CI helper was also reduced to a single cached display lookup plus brightness writes.
 
 If you experience crashes:
 1. Update your system: `sudo apt update && sudo apt full-upgrade -y && reboot`
