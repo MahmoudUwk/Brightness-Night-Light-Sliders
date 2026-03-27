@@ -65,6 +65,7 @@ const BrightnessSlider = GObject.registerClass(
       this._topologyDebounceId = null;
       this._topologyGeneration = 0;
       this._lastTopologyChange = 0;
+      this._topologyRefreshPending = false;
 
       this._menuOpenDebounceId = null;
 
@@ -154,7 +155,8 @@ const BrightnessSlider = GObject.registerClass(
           }
 
           debugLog("Topology settled, triggering refresh");
-          this._queueSync(true);
+          this._topologyRefreshPending = true;
+          DDCUtil.handleMonitorTopologyChange();
           return GLib.SOURCE_REMOVE;
         },
       );
@@ -174,8 +176,11 @@ const BrightnessSlider = GObject.registerClass(
         CONFIG.SYNC_DEBOUNCE_MS,
         () => {
           this._menuOpenDebounceId = null;
-          if (!this._destroyed)
+          if (!this._destroyed) {
+            if (this._topologyRefreshPending)
+              this._topologyRefreshPending = false;
             this._queueSync(false);
+          }
           return GLib.SOURCE_REMOVE;
         },
       );
@@ -264,10 +269,8 @@ const BrightnessSlider = GObject.registerClass(
       const shouldForceRefresh = this._forceRefreshPending || forceRefresh;
       this._forceRefreshPending = false;
 
-      if (shouldForceRefresh) {
+      if (shouldForceRefresh)
         debugLog(`Forcing topology refresh (request ${requestId}, gen ${topologyGen})`);
-        DDCUtil.handleMonitorTopologyChange();
-      }
 
       try {
         const currentMonitors = safeGetMonitors();
