@@ -37,6 +37,8 @@ This extension uses defensive programming to avoid crashes during monitor topolo
 - Generation tokens to cancel stale async operations
 - Monitor validity guards before applying changes
 
+Version 2 also fixes a teardown bug in the brightness slider where a lingering timeout could run after the actor was destroyed.
+
 If you experience crashes:
 1. Update your system: `sudo apt update && sudo apt full-upgrade -y && reboot`
 2. Check logs: `journalctl -b | grep -iE "gnome-shell|mutter"`

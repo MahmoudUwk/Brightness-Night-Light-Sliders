@@ -293,7 +293,7 @@ const BrightnessSlider = GObject.registerClass(
           return;
         }
 
-        if (!this._sliderChangedId) {
+        if (!this._sliderChangedId || !this.slider) {
           debugLog("Slider already destroyed");
           return;
         }
@@ -370,7 +370,7 @@ const BrightnessSlider = GObject.registerClass(
       }
 
       if (this._menuOpenDebounceId) {
-        GLib.source.remove(this._menuOpenDebounceId);
+        GLib.source_remove(this._menuOpenDebounceId);
         this._menuOpenDebounceId = null;
       }
 
