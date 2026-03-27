@@ -41,6 +41,7 @@ Version 2 also fixes a teardown bug in the brightness slider where a lingering t
 
 The extension now avoids aggressive DDC/CI refreshes during monitor topology changes, which can reduce brief flicker on some external displays.
 Topology changes now only refresh when Quick Settings is opened, instead of probing the monitor in the background.
+It also skips the initial brightness probe at shell startup, which further reduces early display resets on some monitors.
 
 If you experience crashes:
 1. Update your system: `sudo apt update && sudo apt full-upgrade -y && reboot`

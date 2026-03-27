@@ -89,9 +89,6 @@ const BrightnessSlider = GObject.registerClass(
       } else {
         this._monitorsChangedId = null;
       }
-
-      if (this._supportsBrightness)
-        this._queueSync(true);
     }
 
     _sliderChanged() {
@@ -125,6 +122,9 @@ const BrightnessSlider = GObject.registerClass(
 
       const now = Date.now();
       const currentMonitorCount = safeGetMonitors();
+
+      if (currentMonitorCount === this._monitorCount)
+        return;
 
       if (currentMonitorCount !== this._monitorCount) {
         debugLog(`Monitor count changed: ${this._monitorCount} -> ${currentMonitorCount}`);
