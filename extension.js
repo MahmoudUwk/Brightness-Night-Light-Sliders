@@ -56,23 +56,10 @@ const BrightnessSlider = GObject.registerClass(
       this._forceRefreshPending = false;
       this._lastErrorMessage = null;
 
-      this._menuConnectRetryId = null;
-      this._menuConnectAttempts = 0;
-      this._menuConnectWarningLogged = false;
-
       this._syncRequestId = 0;
-
-      this._topologyDebounceId = null;
-      this._topologyGeneration = 0;
-      this._lastTopologyChange = 0;
-      this._topologyRefreshPending = false;
-
-      this._menuOpenDebounceId = null;
 
       this._monitorCount = safeGetMonitors();
 
-      this._quickSettingsOpenedId = null;
-      this._quickSettingsMenu = null;
       this.slider.accessible_name = _("Brightness");
       this._sliderChangedId = this.slider.connect(
         "notify::value",
@@ -80,13 +67,6 @@ const BrightnessSlider = GObject.registerClass(
       );
 
       if (this._supportsBrightness) {
-        this._ensureQuickSettingsMenuConnection();
-
-        this._monitorsChangedId = Main.layoutManager.connect(
-          "monitors-changed",
-          this._handleMonitorsChanged.bind(this),
-        );
-      } else {
         this._monitorsChangedId = null;
       }
     }
@@ -114,115 +94,6 @@ const BrightnessSlider = GObject.registerClass(
 
       const level = Math.round(this.slider.value * 100);
       DDCUtil.setBrightness(level);
-    }
-
-    _handleMonitorsChanged() {
-      if (this._destroyed || !this._supportsBrightness)
-        return;
-
-      const now = Date.now();
-      const currentMonitorCount = safeGetMonitors();
-
-      if (currentMonitorCount === this._monitorCount)
-        return;
-
-      if (currentMonitorCount !== this._monitorCount) {
-        debugLog(`Monitor count changed: ${this._monitorCount} -> ${currentMonitorCount}`);
-        this._monitorCount = currentMonitorCount;
-      }
-
-      if (this._topologyDebounceId) {
-        GLib.source_remove(this._topologyDebounceId);
-        this._topologyDebounceId = null;
-      }
-
-      this._topologyGeneration++;
-      this._lastTopologyChange = now;
-
-      this._topologyDebounceId = GLib.timeout_add(
-        GLib.PRIORITY_DEFAULT,
-        CONFIG.TOPOLOGY_DEBOUNCE_MS,
-        () => {
-          this._topologyDebounceId = null;
-
-          if (this._destroyed)
-            return GLib.SOURCE_REMOVE;
-
-          const elapsed = Date.now() - this._lastTopologyChange;
-          if (elapsed < CONFIG.TOPOLOGY_DEBOUNCE_MS) {
-            debugLog(`Topology still settling, waiting... (${elapsed}ms)`);
-            return GLib.SOURCE_REMOVE;
-          }
-
-          debugLog("Topology settled, triggering refresh");
-          this._topologyRefreshPending = true;
-          DDCUtil.handleMonitorTopologyChange();
-          return GLib.SOURCE_REMOVE;
-        },
-      );
-    }
-
-    _handleMenuOpenStateChanged(_menu, isOpen) {
-      if (this._destroyed || !this._supportsBrightness || !isOpen)
-        return;
-
-      if (this._menuOpenDebounceId) {
-        GLib.source_remove(this._menuOpenDebounceId);
-        this._menuOpenDebounceId = null;
-      }
-
-      this._menuOpenDebounceId = GLib.timeout_add(
-        GLib.PRIORITY_DEFAULT,
-        CONFIG.SYNC_DEBOUNCE_MS,
-        () => {
-          this._menuOpenDebounceId = null;
-          if (!this._destroyed) {
-            if (this._topologyRefreshPending)
-              this._topologyRefreshPending = false;
-            this._queueSync(false);
-          }
-          return GLib.SOURCE_REMOVE;
-        },
-      );
-    }
-
-    _ensureQuickSettingsMenuConnection() {
-      if (this._destroyed || !this._supportsBrightness || this._quickSettingsOpenedId)
-        return;
-
-      const quickSettings = getQuickSettings();
-      if (quickSettings?.menu) {
-        this._quickSettingsMenu = quickSettings.menu;
-        this._quickSettingsOpenedId = this._quickSettingsMenu.connect(
-          "open-state-changed",
-          this._handleMenuOpenStateChanged.bind(this),
-        );
-        this._menuConnectAttempts = 0;
-        this._menuConnectWarningLogged = false;
-        return;
-      }
-
-      if (this._menuConnectAttempts >= QUICK_SETTINGS_MAX_RETRIES) {
-        if (!this._menuConnectWarningLogged) {
-          extLog("Quick Settings menu was not ready; menu-open refresh hook is disabled");
-          this._menuConnectWarningLogged = true;
-        }
-        return;
-      }
-
-      if (this._menuConnectRetryId)
-        return;
-
-      this._menuConnectRetryId = GLib.timeout_add(
-        GLib.PRIORITY_DEFAULT,
-        QUICK_SETTINGS_RETRY_MS,
-        () => {
-          this._menuConnectRetryId = null;
-          this._menuConnectAttempts += 1;
-          this._ensureQuickSettingsMenuConnection();
-          return GLib.SOURCE_REMOVE;
-        },
-      );
     }
 
     _queueSync(forceRefresh = false) {
@@ -269,9 +140,6 @@ const BrightnessSlider = GObject.registerClass(
       const shouldForceRefresh = this._forceRefreshPending || forceRefresh;
       this._forceRefreshPending = false;
 
-      if (shouldForceRefresh)
-        debugLog(`Forcing topology refresh (request ${requestId}, gen ${topologyGen})`);
-
       try {
         const currentMonitors = safeGetMonitors();
         if (currentMonitors === 0) {
@@ -288,11 +156,6 @@ const BrightnessSlider = GObject.registerClass(
 
         if (requestId !== this._syncRequestId) {
           debugLog(`Stale sync result (request ${requestId} != current ${this._syncRequestId}), discarding`);
-          return;
-        }
-
-        if (topologyGen !== this._topologyGeneration) {
-          debugLog(`Topology changed during sync (gen ${topologyGen} != current ${this._topologyGeneration}), discarding`);
           return;
         }
 
@@ -321,11 +184,6 @@ const BrightnessSlider = GObject.registerClass(
 
         if (requestId !== this._syncRequestId) {
           debugLog(`Stale error (request ${requestId}), ignoring`);
-          return;
-        }
-
-        if (topologyGen !== this._topologyGeneration) {
-          debugLog(`Topology changed during error (gen ${topologyGen}), ignoring`);
           return;
         }
 
@@ -362,46 +220,12 @@ const BrightnessSlider = GObject.registerClass(
         this._syncIdleId = null;
       }
 
-      if (this._menuConnectRetryId) {
-        GLib.source_remove(this._menuConnectRetryId);
-        this._menuConnectRetryId = null;
-      }
-
-      if (this._topologyDebounceId) {
-        GLib.source_remove(this._topologyDebounceId);
-        this._topologyDebounceId = null;
-      }
-
-      if (this._menuOpenDebounceId) {
-        GLib.source_remove(this._menuOpenDebounceId);
-        this._menuOpenDebounceId = null;
-      }
-
       if (this._interactionTimeoutId) {
         GLib.source_remove(this._interactionTimeoutId);
         this._interactionTimeoutId = null;
       }
 
-      if (this._monitorsChangedId) {
-        try {
-          Main.layoutManager.disconnect(this._monitorsChangedId);
-        } catch (e) {
-          debugLog(`Error disconnecting monitors-changed: ${e.message}`);
-        }
-        this._monitorsChangedId = null;
-      }
-
-      if (this._quickSettingsOpenedId) {
-        if (this._quickSettingsMenu) {
-          try {
-            this._quickSettingsMenu.disconnect(this._quickSettingsOpenedId);
-          } catch (e) {
-            debugLog(`Error disconnecting menu: ${e.message}`);
-          }
-        }
-        this._quickSettingsOpenedId = null;
-        this._quickSettingsMenu = null;
-      }
+      this._monitorsChangedId = null;
 
       if (this._sliderChangedId) {
         try {
@@ -557,7 +381,6 @@ const Indicator = GObject.registerClass(
       if (quickSettings) {
         try {
           quickSettings.addExternalIndicator(this, 2);
-          brightnessSlider._ensureQuickSettingsMenuConnection();
           this._quickSettingsAttached = true;
           this._quickSettingsAttachAttempts = 0;
           this._quickSettingsWarningLogged = false;
